@@ -1,0 +1,171 @@
+---
+title: "STAT3500 Assignment 4"
+author: "Chee Kitt Win"
+date: "11/1/2021"
+output: html_document
+---
+
+```{r}
+library(lattice)
+uni_data = read.csv("C:\\Users\\Owner\\Desktop\\UQ Year 3 Sem 2 Courses\\STAT3500\\Assignment 4\\Data-Ass4a(4).csv")
+```
+
+
+# a) iii)
+
+# Starting points tried
+
+### Looking at the density plot, we see most of the data clustered around x = 1. We also observe 2 points near x = -2 which seem more like outliers rather than a separate cluster. Initializing the parameters as mu1 = 0, mu2 = 2, common variance = 1, pro1 = 0.5, pro2 = 0.5 seems reasonable here. The estimated parameters at convergence are given below.
+
+# Stopping criterion
+
+### According to the specification of Mclust, the algorithm stops iterating if any of the following are met:
+#### 1. The improvement of the value of the Q function between iterations is less than 0.00001 (Successful convergence)
+#### 2. At any point, the updated covariance has a value of less than the relative machine precision .Machine$double.eps, which is approximately 2x10^− 16 on IEEEcompliant machines.
+
+
+```{r}
+library(mclust)
+densityplot(uni_data[,2], main = "Density Plot" , xlab = "x")
+params = list(pro = c(0.5,0.5),mean = c(0,2), variance = list(modelName = "E", d = 1, G = 2, sigmasq = 1))
+
+
+set.seed(5)
+EM = em(uni_data[,2],modelName = "E", parameters = params)
+EM$modelName
+EM$parameters
+```
+# a) iv)
+
+### Below is a histogram of the data overlayed with the pdf of the fitted model. I chose the number of bins, N, based on the formula provided in the question. 
+
+```{r}
+# N is the number of bins (based on the formula in the question)
+N = log(75)/log(2) + 1
+# Plot the histogram of the data
+histogram = hist(uni_data[,2], breaks = floor(N), xlab = "x", freq = FALSE, ylim = c(0,0.4),
+                 main ="Histogram of data overlayed with density plot of the fitted model")
+
+# Plot the pdf of the fitted GMM
+x <- seq(-5, 5, by = .1)
+y <- EM$parameters$pro[1]*dnorm(x, mean = EM$parameters$mean[1], sd = sqrt(EM$parameters$variance$sigmasq)) + 
+    EM$parameters$pro[2]*dnorm(x, mean = EM$parameters$mean[2], sd = sqrt(EM$parameters$variance$sigmasq))
+lines(x,y, xlab = "", ylab = "")
+
+```
+
+
+# a) v)
+
+### We retain the null hypothesis since the p value is 0.7758. The fit is good.
+
+```{r}
+library(AdaptGauss)
+cdf = CDFMixtures(Kernels = c(-3,-2,-1,0,1,2,3,4), Means = c(EM$parameters$mean[1],EM$parameters$mean[2]), SDs = c(sqrt(EM$parameters$variance$sigmasq),sqrt(EM$parameters$variance$sigmasq)), Weights = c(EM$parameters$pro[1],EM$parameters$pro[2]))
+list = c()
+for (i in 1:8){
+  list = c(list,(cdf$CDFGaussMixture[i] - cdf$CDFGaussMixture[i-1]))
+}
+list[7] = list[7] + 1 - sum(list)
+chisq.test(x = histogram$counts, p = list)
+
+```
+
+# a) vi) 
+
+### From this section onwards, instead of manually initializing starting values for the parameters as done in part a) iii), I use the Mclust() function from the mclust package to implement the EM algorithm for Gaussian mixture models. This is because many of the functions in this package are useful for subsequent questions, but require an Mclust object to be taken as an argument. 
+
+### As required, variance is no longer set to be equal (modelNames = "v"), and the estimated parameters of the fitted model are given below.
+
+```{r}
+set.seed(5)
+EM_unequal_variance = Mclust(uni_data[,2], G = 2, modelNames = "V")
+EM_unequal_variance$parameters
+```
+
+
+# a) vii) 
+
+### Here, the function MclustBootstrap() is implementing a non parametric bootstrap (indicated by the argument type = "bs") with 1000 replications. The standard errors of the parameters obtained are given below.
+
+```{r}
+set.seed(5)
+non_par_boot = MclustBootstrap(EM_unequal_variance, type = "bs", nboot = 1000)
+summary(non_par_boot, what = "se")
+```
+
+# a) viii)
+
+### Using the fitted model in part a)vi), we obtain standard errors for the estimated parameters via a parametric bootstrap (type = "pb") with 1000 replications. The standard errors of each parameter are shown below.
+
+```{r}
+set.seed(5)
+par_boot = MclustBootstrap(EM_unequal_variance, type = "pb", nboot = 1000)
+summary(par_boot, what = "se")
+```
+# b) i) 
+
+### Aside from fitting the mixture models, I also did some pairplots as a sanity check. We can see that for g = 1,2 and 3, in each individual plot, the ellipses from each component have the same shape and size which agrees with the fact that we have fitted a GMM with common covariance matrix (modelNames = "EEE"). The parameters of the fitted models are also provided below.
+
+```{r}
+multi_data = read.csv("C:\\Users\\Owner\\Desktop\\UQ Year 3 Sem 2 Courses\\STAT3500\\Assignment 4\\Data-Ass4b(3).csv", header = FALSE)
+set.seed(5)
+multi_EM1 = Mclust(multi_data, G = 1, modelNames = "EEE")
+multi_EM1$parameters
+set.seed(5)
+multi_EM2 = Mclust(multi_data, G = 2, modelNames = "EEE")
+multi_EM2$parameters
+set.seed(5)
+multi_EM3 = Mclust(multi_data, G = 3, modelNames = "EEE")
+multi_EM3$parameters
+plot(multi_EM1, what = "classification")
+plot(multi_EM2, what = "classification")
+plot(multi_EM3, what = "classification")
+```
+
+# b) ii) 
+
+### We know that since the null hypothesis is g = 1, the likelihood ratio test statistic does not depend on any unknown parameters. It follows that the bootstrap is effectively sampling from the true null distribution of the LRTS. Therefore, to ensure that the test carried out by mclustBootstrapLRT() is a test of exact size 0.05, we simply set the significance level to 0.05, and ensure that the number of bootstrap replications, B, satisfies k/(B+1) = 0.05 for some integer k. Here, I have chosen k = 999. The p-value obtained is 0.001 < 0.05, strongly suggesting that we should reject the null hypothesis.
+
+
+```{r}
+set.seed(5)
+exact_test = mclustBootstrapLRT(multi_data,modelName = "EEE",level = 0.05, maxG = 1, nboot = 999)
+exact_test
+
+```
+
+# b) iii)
+
+### From the results of the likelihood ratio test below, with 99 bootstrap replications, we obtain a p value of 0.99 > 0.05, strongly suggesting that we retain the null hypothesis, i.e g = 2. 
+
+```{r}
+set.seed(5)
+LRT = mclustBootstrapLRT(multi_data, modelName = "EEE", level = 0.05, nboot = 99, maxG = 2)
+LRT
+```
+
+# b) iv)
+
+### From the graph below, we see that the BIC suggests that we choose g=2 as the number of components since it attains its largest value at g=2. This agrees with the results in the previous sections.
+
+```{r}
+set.seed(5)
+BIC = mclustBIC(multi_data, modelNames = "EEE")
+plot(BIC)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
